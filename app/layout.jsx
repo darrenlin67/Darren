@@ -1,8 +1,10 @@
 import "./globals.css";
+import BasketballMotion from "./BasketballMotion";
+import BackgroundMusic from "./BackgroundMusic";
 
 export const metadata = {
-  title: "Darren — Hoops & Games",
-  description: "Meet Darren: basketball fan, gamer, and always up for the next challenge.",
+  title: "Whats up, Im darren",
+  description: "Meet Darren: basketball and karate fan, always working on the next challenge.",
 };
 
 export const viewport = {
@@ -19,7 +21,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
-      <body>{children}</body>
+      <body>{children}<BasketballMotion /><BackgroundMusic /></body>
     </html>
   );
 }
