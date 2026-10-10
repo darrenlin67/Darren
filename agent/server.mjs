@@ -332,6 +332,71 @@ function openPageTool(job) {
   });
 }
 
+function updateSiteTool(job) {
+  const parameters = z.object({
+    title: z.string().min(1).max(180),
+    url: HttpUrlSchema.max(2000),
+    source_excerpt: z.string().max(1200),
+    why_it_fits: z.string().max(500),
+  });
+
+  const save = async ({ title, url, source_excerpt, why_it_fits }) => {
+    if (!job.resultsValidated) {
+      throw new Error('Only server-validated opportunities can be saved.');
+    }
+
+    const supabaseUrl = process.env.SUPABASE_URL?.trim();
+    const serviceKey = process.env.SUPABASE_SERVICE_KEY?.trim();
+    if (!supabaseUrl || !serviceKey) {
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_KEY must be set.');
+    }
+
+    const endpoint = new URL('/rest/v1/opportunities', supabaseUrl);
+    endpoint.searchParams.set('on_conflict', 'url');
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        apikey: serviceKey,
+        authorization: 'Bearer ' + serviceKey,
+        'content-type': 'application/json',
+        prefer: 'resolution=ignore-duplicates,return=representation',
+      },
+      body: JSON.stringify({
+        title,
+        url,
+        source_excerpt,
+        why_it_fits,
+        status: 'new',
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    const body = await response.text();
+    if (!response.ok) {
+      throw new Error('Supabase returned HTTP ' + response.status + ': ' + body.slice(0, 500));
+    }
+
+    const rows = body ? JSON.parse(body) : [];
+    const row = rows[0] || null;
+    console.log(JSON.stringify({
+      event: 'update_site',
+      status: row ? 'inserted' : 'skipped_duplicate',
+      row: row || { title, url },
+    }));
+    return JSON.stringify({ saved: Boolean(row), row });
+  };
+
+  return {
+    save,
+    tool: tool({
+      name: 'update_site',
+      description: 'Save one server-validated opportunity to Supabase. The server calls this after checking its source evidence.',
+      parameters,
+      execute: save,
+    }),
+  };
+}
+
 function callName(event) {
   const item = event.item;
   return item?.toolName || item?.rawItem?.name || item?.name || 'unknown_tool';
@@ -425,20 +490,22 @@ async function runJob(job) {
     }).format(new Date());
 
     const search = webSearchTool({ searchContextSize: 'low' });
+    const updateSite = updateSiteTool(job);
     const agent = new Agent({
       name: 'Youth Opportunities Researcher',
       model: 'gpt-6-luna',
       outputType: ReportSchema,
-      tools: [search, openPageTool(job)],
+      tools: [search, openPageTool(job), updateSite.tool],
       instructions: [
         'Find up to five current competitions, programs, or events that fit the profile below. The current date in Auckland is ' + today + '.',
-        'Read the supplied interests and search the web first. Use no more than 10 web_search calls total and no more than 15 open_page calls total. Do not make parallel tool calls.',
+        'Read the supplied interests and search the web first. Use no more than 8 web_search calls total and no more than 15 open_page calls total. Consolidate related search terms into each search and do not make parallel tool calls.',
         'Search with broad terms and avoid including an exact age or personal name in search queries. The city and interests may be used to find local opportunities.',
         'After searching, use open_page to read an official organizer, government, or event source for every item you might shortlist.',
         'Before accepting an item, verify from pages you actually read: the person is eligible at the supplied age, the opportunity is accessible from the supplied city, and applications or registration are open as of the current date.',
         'Every accepted item must have separate short, verbatim excerpts for age eligibility, location/access, and open availability. Each excerpt must cite the exact URL returned by open_page. Do not infer missing facts.',
         'Do not assume the person attends a particular school or has experience, awards, equipment, or other qualifications.',
         'If an official page cannot be read, try another official source. Exclude the item if you still cannot verify it, and explain why in ruledOut.',
+        'Do not call update_site during research. The server will save each accepted item after validating its source excerpts.',
         'Return fewer than five if that is all you can verify. Never invent titles, quotes, deadlines, eligibility, or open status.',
         'Keep descriptions concise and do not request contact details or other personal information.',
         'User profile from agent/interests.txt:',
@@ -495,6 +562,32 @@ async function runJob(job) {
     if (job.controller.signal.aborted) throw new Error('The job was stopped before results were complete.');
 
     job.result = validateReport(job, resultStream.finalOutput);
+    job.resultsValidated = true;
+    for (const item of job.result.opportunities) {
+      const sourcePage = pageForEvidence(job, item.availabilityEvidence.url);
+      const url = sourcePage?.finalUrl || item.availabilityEvidence.url;
+      const sourceExcerpt = [
+        'Age eligibility: ' + item.ageEvidence.quote,
+        'Location/access: ' + item.locationEvidence.quote,
+        'Open availability: ' + item.availabilityEvidence.quote,
+      ].join('\n');
+      try {
+        await updateSite.save({
+          title: item.title,
+          url,
+          source_excerpt: sourceExcerpt,
+          why_it_fits: item.description,
+        });
+      } catch (error) {
+        console.log(JSON.stringify({
+          event: 'update_site',
+          status: 'failed',
+          title: item.title,
+          url,
+          error: error instanceof Error ? error.message : 'Supabase save failed.',
+        }));
+      }
+    }
     job.status = 'completed';
     job.stage = 'Finished';
     addActivity(job, 'complete', 'Search finished');
