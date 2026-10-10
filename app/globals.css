@@ -67,6 +67,23 @@ footer{height:83px;border-top:1px solid var(--line);display:flex;align-items:cen
 @keyframes float{0%{top:19%;left:16%;transform:rotate(-17deg) scale(1)}20%{top:17%;left:66%;transform:rotate(190deg) scale(.84)}43%{top:62%;left:67%;transform:rotate(400deg) scale(1.05)}66%{top:65%;left:12%;transform:rotate(620deg) scale(.82)}83%{top:35%;left:32%;transform:rotate(820deg) scale(1.13)}100%{top:19%;left:16%;transform:rotate(1063deg) scale(1)}}
 @media(prefers-reduced-motion:reduce){.ball{animation:none!important;will-change:auto}}
 
+.saved-opportunities{margin-top:58px;padding-top:30px;border-top:1px solid var(--line)}
+.saved-section-heading h2{font-size:clamp(2.4rem,5vw,4rem);letter-spacing:-.07em;line-height:1;margin-top:14px}
+.review-queue,.approved-list{margin-top:34px}
+.review-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;margin-bottom:16px}
+.review-heading h3{font-size:1.65rem;letter-spacing:-.05em;margin-top:10px}
+.review-heading>span{font: .65rem var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding-bottom:4px}
+.saved-opportunity-card{display:flex;flex-direction:column;align-items:flex-start}
+.saved-opportunity-card h3{overflow-wrap:anywhere}
+.saved-source-excerpt{margin-top:16px;padding-left:13px;border-left:2px solid var(--orange);color:#c6c1ba;font-size:.82rem;line-height:1.65;white-space:pre-line}
+.saved-source-link{display:inline-block;margin-top:18px;color:var(--orange);font: .68rem var(--mono);text-transform:uppercase;letter-spacing:.08em}
+.decision-actions{display:flex;gap:10px;margin-top:22px}
+.decision-actions .button{padding:12px 18px;font-size:.7rem}
+.decision-reject{background:transparent!important;color:var(--ink)!important;border:1px solid #ffffff38}
+.decision-reject:hover{border-color:#ff8324;color:#ff8324!important}
+.saved-empty{padding:18px 0;color:var(--muted);font-size:.9rem}
+@media(max-width:760px){.saved-opportunities{margin-top:44px}.review-heading{align-items:flex-start}.decision-actions{width:100%}.decision-actions .button{flex:1}}
+
 .welcome-backdrop{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:24px;background:rgba(5,5,5,.78);backdrop-filter:blur(9px);animation:welcome-fade-in .35s ease both}
 .welcome-card{position:relative;width:min(100%,520px);padding:54px 46px 42px;text-align:center;background:linear-gradient(145deg,#1b1714,#101010);border:1px solid rgba(255,131,36,.42);border-radius:18px;box-shadow:0 30px 100px #000b,0 0 70px #ff832414;animation:welcome-card-in .5s cubic-bezier(.2,.8,.2,1) both}
 .welcome-spark{display:grid;place-items:center;width:48px;height:48px;margin:0 auto 22px;border-radius:50%;background:#ff83241a;color:var(--lime);font-size:1.45rem}

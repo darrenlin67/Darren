@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { agentConfig, agentHeaders, hasValidSession } from "../auth";
+import { agentConfig, agentHeaders, createSessionCookie, hasValidSession, matchesSitePassword } from "../auth";
+import { decideOpportunity } from "../data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,4 +33,39 @@ export async function GET(request, context) {
 
 export async function POST(request, context) {
   return relay(request, context, "POST");
+}
+
+export async function PATCH(request, context) {
+  const hasSession = hasValidSession(request);
+  let body = {};
+  try {
+    const text = await request.text();
+    if (text.length > 2048) return NextResponse.json({ error: "Request is too large." }, { status: 413 });
+    if (text) body = JSON.parse(text);
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+
+  const passwordMatches = matchesSitePassword(body?.password);
+  if (!hasSession && !passwordMatches) {
+    return NextResponse.json({ error: "Enter the site password to decide an opportunity." }, { status: 401 });
+  }
+
+  const { jobId: id } = await context.params;
+  if (!/^\d{1,20}$/.test(id)) return NextResponse.json({ error: "Invalid opportunity id." }, { status: 400 });
+  if (!['approved', 'rejected'].includes(body?.status)) {
+    return NextResponse.json({ error: "Choose approved or rejected." }, { status: 400 });
+  }
+
+  try {
+    const opportunity = await decideOpportunity(id, body.status);
+    if (!opportunity) return NextResponse.json({ error: "This new opportunity was not found." }, { status: 404 });
+    const response = NextResponse.json({ opportunity }, {
+      headers: { "Cache-Control": "no-store" },
+    });
+    if (!hasSession && passwordMatches) response.headers.set("Set-Cookie", createSessionCookie());
+    return response;
+  } catch {
+    return NextResponse.json({ error: "Could not update this opportunity." }, { status: 502 });
+  }
 }

@@ -1,8 +1,20 @@
 import { NextResponse } from "next/server";
-import { agentConfig, agentHeaders, createSessionCookie, matchesSitePassword } from "./auth";
+import { agentConfig, agentHeaders, createSessionCookie, hasValidSession, matchesSitePassword } from "./auth";
+import { readApprovedOpportunities } from "./data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+export async function GET(request) {
+  try {
+    const approved = await readApprovedOpportunities();
+    return NextResponse.json({ approved, canModerate: hasValidSession(request) }, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  } catch {
+    return NextResponse.json({ error: "Could not load approved opportunities." }, { status: 502 });
+  }
+}
 
 export async function POST(request) {
   if (!process.env.SITE_PASSWORD) {

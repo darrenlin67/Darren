@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 function elapsedLabel(milliseconds = 0) {
   const total = Math.max(0, Math.floor(milliseconds / 1000));
@@ -22,6 +22,15 @@ function Evidence({ label, evidence }) {
   );
 }
 
+function newestFirst(left, right) {
+  return Date.parse(right.found_at || "") - Date.parse(left.found_at || "");
+}
+
+function foundDate(value) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat("en-NZ", { dateStyle: "medium", timeZone: "Pacific/Auckland" }).format(new Date(value));
+}
+
 export default function OpportunitiesClient() {
   const [password, setPassword] = useState("");
   const [jobId, setJobId] = useState("");
@@ -29,6 +38,33 @@ export default function OpportunitiesClient() {
   const [error, setError] = useState("");
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [approved, setApproved] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [canModerate, setCanModerate] = useState(false);
+  const [moderatingId, setModeratingId] = useState("");
+  const [listError, setListError] = useState("");
+
+  const loadSaved = useCallback(async () => {
+    const data = await readResponse(await fetch("/api/opportunities", { cache: "no-store" }));
+    setApproved(data.approved || []);
+    setCanModerate(Boolean(data.canModerate));
+    if (data.canModerate) {
+      const review = await readResponse(await fetch("/api/opportunities/review", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+        cache: "no-store",
+      }));
+      setPending(review.opportunities || []);
+    } else {
+      setPending([]);
+    }
+    setListError("");
+  }, []);
+
+  useEffect(() => {
+    loadSaved().catch(cause => setListError(cause.message || "Could not load saved opportunities."));
+  }, [loadSaved]);
 
   useEffect(() => {
     if (!jobId || !["queued", "running"].includes(job?.status)) return undefined;
@@ -40,6 +76,13 @@ export default function OpportunitiesClient() {
         if (stopped) return;
         setJob(next);
         setError("");
+        if (next.status === "completed") {
+          try {
+            await loadSaved();
+          } catch (cause) {
+            setListError(cause.message || "Could not refresh saved opportunities.");
+          }
+        }
         if (["queued", "running"].includes(next.status)) timer = setTimeout(poll, 1200);
       } catch (cause) {
         if (!stopped) setError(cause.message || "Could not load job progress.");
@@ -50,7 +93,7 @@ export default function OpportunitiesClient() {
       stopped = true;
       clearTimeout(timer);
     };
-  }, [jobId, job?.status]);
+  }, [jobId, job?.status, loadSaved]);
 
   async function startJob(event) {
     event.preventDefault();
@@ -67,6 +110,11 @@ export default function OpportunitiesClient() {
       setPassword("");
       setJobId(started.jobId);
       setJob({ status: started.status || "queued", progress: { searches: 0, pageReads: 0, elapsedMs: 0, stage: "Queued" }, activity: [] });
+      try {
+        await loadSaved();
+      } catch (cause) {
+        setListError(cause.message || "Could not load saved opportunities.");
+      }
     } catch (cause) {
       setError(cause.message || "Could not start the search.");
     } finally {
@@ -84,6 +132,35 @@ export default function OpportunitiesClient() {
       setError(cause.message || "Could not cancel the search.");
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function decide(item, status) {
+    const itemId = String(item.id);
+    const decidedAt = new Date().toISOString();
+    setModeratingId(itemId);
+    setError("");
+    setPending(current => current.filter(row => String(row.id) !== itemId));
+    if (status === "approved") {
+      const optimistic = { ...item, status, decided_at: decidedAt };
+      setApproved(current => [...current.filter(row => String(row.id) !== itemId), optimistic].sort(newestFirst));
+    }
+
+    try {
+      const response = await readResponse(await fetch(`/api/opportunities/${itemId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status }),
+      }));
+      if (status === "approved") {
+        setApproved(current => [...current.filter(row => String(row.id) !== itemId), response.opportunity].sort(newestFirst));
+      }
+    } catch (cause) {
+      setPending(current => [...current.filter(row => String(row.id) !== itemId), item].sort(newestFirst));
+      if (status === "approved") setApproved(current => current.filter(row => String(row.id) !== itemId));
+      setError(cause.message || "Could not update this opportunity.");
+    } finally {
+      setModeratingId("");
     }
   }
 
@@ -110,6 +187,44 @@ export default function OpportunitiesClient() {
           </div>
           <p className="form-note">Your password is checked by the site server. Agent credentials stay on the server.</p>
         </form>
+
+        <section className="saved-opportunities" aria-labelledby="saved-heading" aria-live="polite">
+          <div className="saved-section-heading">
+            <p className="section-label"><span>02</span> SAVED OPPORTUNITIES</p>
+            <h2 id="saved-heading">Worth a closer look.</h2>
+          </div>
+          {listError && <p className="opportunity-error" role="alert">{listError}</p>}
+
+          {canModerate && <section className="review-queue" aria-labelledby="review-heading">
+            <div className="review-heading"><div><p className="section-label"><span>03</span> PRIVATE REVIEW</p><h3 id="review-heading">New opportunities</h3></div><span>{pending.length} waiting</span></div>
+            {pending.length ? <div className="opportunity-grid">
+              {pending.map(item => <article className="opportunity-card saved-opportunity-card" key={item.id}>
+                <div className="card-top"><span>NEW</span><span>{foundDate(item.found_at) || "JUST FOUND"}</span></div>
+                <h3>{item.title}</h3>
+                {item.why_it_fits && <p className="opportunity-description">{item.why_it_fits}</p>}
+                {item.source_excerpt && <p className="saved-source-excerpt">{item.source_excerpt}</p>}
+                <a className="saved-source-link" href={item.url} target="_blank" rel="noreferrer">Open source ↗</a>
+                <div className="decision-actions">
+                  <button className="button" type="button" onClick={() => decide(item, "approved")} disabled={Boolean(moderatingId)}>{moderatingId === String(item.id) ? "Saving…" : "Approve"}</button>
+                  <button className="button decision-reject" type="button" onClick={() => decide(item, "rejected")} disabled={Boolean(moderatingId)}>{moderatingId === String(item.id) ? "Saving…" : "Reject"}</button>
+                </div>
+              </article>)}
+            </div> : <p className="saved-empty">No new opportunities are waiting for review.</p>}
+          </section>}
+
+          <div className="approved-list">
+            <div className="review-heading"><div><p className="section-label"><span>04</span> APPROVED</p><h3>Ready to explore</h3></div><span>{approved.length} saved</span></div>
+            {approved.length ? <div className="opportunity-grid">
+              {approved.map(item => <article className="opportunity-card saved-opportunity-card" key={item.id}>
+                <div className="card-top"><span>APPROVED</span><span>{foundDate(item.found_at)}</span></div>
+                <h3>{item.title}</h3>
+                {item.why_it_fits && <p className="opportunity-description">{item.why_it_fits}</p>}
+                {item.source_excerpt && <p className="saved-source-excerpt">{item.source_excerpt}</p>}
+                <a className="saved-source-link" href={item.url} target="_blank" rel="noreferrer">Open source ↗</a>
+              </article>)}
+            </div> : <p className="saved-empty">No approved opportunities yet.</p>}
+          </div>
+        </section>
 
         {error && <p className="opportunity-error" role="alert">{error}</p>}
 
