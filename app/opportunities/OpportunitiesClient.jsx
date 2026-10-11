@@ -252,6 +252,7 @@ export default function OpportunitiesClient() {
 
         {job?.status === "completed" && <section className="opportunity-results" aria-labelledby="results-heading">
           <div className="results-title"><p className="section-label"><span>03</span> VERIFIED RESULTS</p><h2 id="results-heading">{job.results?.opportunities?.length ? `${job.results.opportunities.length} ${job.results.opportunities.length === 1 ? "good fit" : "good fits"}.` : "Nothing verified this time."}</h2><p>{job.results?.summary}</p></div>
+          {job.warning && <p className="result-note" role="status">{job.warning}</p>}
           <div className="opportunity-grid">
             {(job.results?.opportunities || []).map((item, index) => <article className="opportunity-card" key={`${item.title}-${index}`}>
               <div className="card-top"><span>{item.kind}</span><span>{String(index + 1).padStart(2, "0")}</span></div>
